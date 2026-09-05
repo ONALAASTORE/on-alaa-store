@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, 
   Star, 
@@ -9,10 +10,18 @@ import {
   ShoppingCart, 
   ArrowLeftRight, 
   Heart,
-  CreditCard
+  CreditCard,
+  Share2,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  LayoutGrid,
+  SlidersHorizontal,
+  Images
 } from 'lucide-react';
 import { Product, Currency, ProductVariant } from '../types';
 import { formatPrice } from '../utils/currency';
+import { getProductImages, DEFAULT_PRODUCT_IMAGE } from '../utils/productImages';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -38,17 +47,180 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   if (!product) return null;
 
   const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
-  const [selectedImage, setSelectedImage] = useState(product.image);
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState<'specs' | 'features' | 'delivery'>('specs');
   const [added, setAdded] = useState(false);
+  const [shareStatus, setShareStatus] = useState<'idle' | 'copied' | 'shared'>('idle');
+
+  // Product image carousel iterating through the 'imageUrls' array
+  const imageUrls = useMemo<string[]>(() => {
+    // 1. Direct 'imageUrls' array on product
+    if (Array.isArray(product.imageUrls) && product.imageUrls.length > 0) {
+      const valid = product.imageUrls.filter(
+        (url): url is string => typeof url === 'string' && url.trim().length > 0
+      );
+      if (valid.length > 0) return valid;
+    }
+    // 2. Direct 'image_urls' array fallback
+    if (Array.isArray(product.image_urls) && product.image_urls.length > 0) {
+      const valid = product.image_urls.filter(
+        (url): url is string => typeof url === 'string' && url.trim().length > 0
+      );
+      if (valid.length > 0) return valid;
+    }
+    // 3. Fallback to unified extraction
+    return getProductImages(product);
+  }, [product]);
+
+  // Track [activeImageIndex, direction] for smooth slide animation (-1 = prev, 1 = next)
+  const [[activeImageIndex, direction], setImageIndex] = useState<[number, number]>([0, 0]);
+  const [galleryViewMode, setGalleryViewMode] = useState<'slider' | 'grid'>('slider');
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const thumbnailRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // Reset active image when product changes
+  useEffect(() => {
+    setImageIndex([0, 0]);
+  }, [product?.id]);
+
+  // Seamless pagination helper with infinite loop
+  const paginate = (newDirection: number) => {
+    if (imageUrls.length <= 1) return;
+    setImageIndex(([current]) => {
+      const nextIndex = (current + newDirection + imageUrls.length) % imageUrls.length;
+      return [nextIndex, newDirection];
+    });
+  };
+
+  const goToIndex = (targetIndex: number) => {
+    if (targetIndex === activeImageIndex) return;
+    const dir = targetIndex > activeImageIndex ? 1 : -1;
+    setImageIndex([targetIndex, dir]);
+  };
+
+  // Keyboard navigation for gallery carousel & lightbox
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isLightboxOpen) {
+          setIsLightboxOpen(false);
+        } else {
+          onClose();
+        }
+      } else if (e.key === 'ArrowLeft' && imageUrls.length > 1) {
+        paginate(-1);
+      } else if (e.key === 'ArrowRight' && imageUrls.length > 1) {
+        paginate(1);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isLightboxOpen, imageUrls.length, onClose, activeImageIndex]);
+
+  // Auto-scroll active thumbnail into view
+  useEffect(() => {
+    if (thumbnailRefs.current[activeImageIndex]) {
+      thumbnailRefs.current[activeImageIndex]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      });
+    }
+  }, [activeImageIndex]);
+
+  // Touch swipe gesture handlers for mobile
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const minSwipeDistance = 40;
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStart === null || touchEnd === null) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    if (isLeftSwipe && imageUrls.length > 1) {
+      paginate(1);
+    } else if (isRightSwipe && imageUrls.length > 1) {
+      paginate(-1);
+    }
+    setTouchStart(null);
+    setTouchEnd(null);
+  };
 
   const currentVariant = product.variants[selectedVariantIndex] || product.variants[0];
+
+  const handlePrevImage = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    paginate(-1);
+  };
+
+  const handleNextImage = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    paginate(1);
+  };
 
   const handleAddToCart = () => {
     onAddToCart(product, currentVariant, quantity);
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
+  };
+
+  const handleShare = async () => {
+    // Generate clean product link with 'product' param
+    const url = new URL(window.location.href);
+    url.searchParams.set('product', product.id);
+    const shareUrl = url.toString();
+
+    const shareData = {
+      title: `${product.name} | ON ALAA STORE`,
+      text: `Check out ${product.name} (${currentVariant.name}) at ON ALAA STORE - ${formatPrice(currentVariant.priceUSD, currency)}:`,
+      url: shareUrl,
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        setShareStatus('shared');
+        setTimeout(() => setShareStatus('idle'), 2500);
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.warn('Web Share failed, falling back to clipboard copy:', err);
+          fallbackCopyToClipboard(shareUrl);
+        }
+      }
+    } else {
+      fallbackCopyToClipboard(shareUrl);
+    }
+  };
+
+  const fallbackCopyToClipboard = async (textToCopy: string) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(textToCopy);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = textToCopy;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setShareStatus('copied');
+      setTimeout(() => setShareStatus('idle'), 2500);
+    } catch (e) {
+      console.error('Failed to copy product link', e);
+    }
   };
 
   const whatsappMessage = encodeURIComponent(
@@ -72,36 +244,197 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 p-6 sm:p-8">
           
-          {/* Left Column: Image Gallery */}
-          <div className="md:col-span-5 space-y-4">
-            {/* Main Stage */}
-            <div className="relative aspect-square rounded-2xl bg-slate-50 border border-slate-100 p-6 flex items-center justify-center overflow-hidden">
-              <img
-                src={selectedImage}
-                alt={product.name}
-                className="w-full h-full object-contain object-center"
-                referrerPolicy="no-referrer"
-              />
-              {product.isHotDeal && (
-                <span className="absolute top-3 left-3 bg-rose-500 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase">
-                  Hot Deal
+          {/* Left Column: Multi-Image Interactive Gallery */}
+          <div className="md:col-span-5 space-y-3">
+            {/* Gallery Header Bar */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                <Images className="w-3.5 h-3.5 text-blue-600" />
+                <span>Product Media</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                  {allImages.length} {allImages.length === 1 ? 'photo' : 'photos'}
                 </span>
+              </div>
+
+              {allImages.length > 1 && (
+                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-slate-600">
+                  <button
+                    type="button"
+                    onClick={() => setGalleryViewMode('slider')}
+                    className={`p-1 rounded-md text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                      galleryViewMode === 'slider'
+                        ? 'bg-white text-blue-600 shadow-xs'
+                        : 'hover:text-slate-900'
+                    }`}
+                    title="Featured Carousel View"
+                  >
+                    <SlidersHorizontal className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGalleryViewMode('grid')}
+                    className={`p-1 rounded-md text-[11px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                      galleryViewMode === 'grid'
+                        ? 'bg-white text-blue-600 shadow-xs'
+                        : 'hover:text-slate-900'
+                    }`}
+                    title="Multi-Angle Grid View"
+                  >
+                    <LayoutGrid className="w-3 h-3" />
+                  </button>
+                </div>
               )}
             </div>
 
-            {/* Thumbnails */}
-            {product.galleryImages.length > 1 && (
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                {product.galleryImages.map((img, i) => (
+            {/* Slider / Carousel View Mode */}
+            {galleryViewMode === 'slider' ? (
+              <div className="space-y-2.5">
+                {/* Main Featured Stage */}
+                <div 
+                  className="relative aspect-square rounded-2xl bg-slate-50 border border-slate-200/80 p-6 flex items-center justify-center overflow-hidden group cursor-zoom-in"
+                  onClick={() => setIsLightboxOpen(true)}
+                >
+                  <img
+                    src={allImages[activeImageIndex] || DEFAULT_PRODUCT_IMAGE}
+                    alt={`${product.name} - View ${activeImageIndex + 1}`}
+                    className="w-full h-full object-contain object-center transition duration-300 group-hover:scale-105"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
+                    }}
+                  />
+
+                  {/* Badges Overlay */}
+                  <div className="absolute top-3 left-3 flex flex-col gap-1.5 z-10 pointer-events-none">
+                    {product.isHotDeal && (
+                      <span className="bg-rose-500 text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-md uppercase tracking-wider shadow-xs">
+                        Hot Deal
+                      </span>
+                    )}
+                    {product.condition && product.condition !== 'Brand New (Sealed)' && (
+                      <span className="bg-amber-500 text-black text-[9px] font-bold px-2 py-0.5 rounded shadow-xs">
+                        {product.condition}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Zoom Action Pill */}
                   <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsLightboxOpen(true);
+                    }}
+                    className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-slate-700 shadow-sm border border-slate-200 flex items-center justify-center transition opacity-80 hover:opacity-100 cursor-pointer"
+                    title="Open Fullscreen Lightbox"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Previous / Next Arrows on Main Stage */}
+                  {allImages.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handlePrevImage}
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-slate-800 shadow-md border border-slate-200 flex items-center justify-center transition opacity-0 group-hover:opacity-100 cursor-pointer"
+                        title="Previous Image"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleNextImage}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-slate-800 shadow-md border border-slate-200 flex items-center justify-center transition opacity-0 group-hover:opacity-100 cursor-pointer"
+                        title="Next Image"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
+
+                  {/* Counter Badge */}
+                  {allImages.length > 1 && (
+                    <div className="absolute bottom-3 right-3 z-10 bg-slate-900/70 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-full pointer-events-none">
+                      {activeImageIndex + 1} / {allImages.length}
+                    </div>
+                  )}
+                </div>
+
+                {/* Thumbnail Slider Strip */}
+                {allImages.length > 1 && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+                      {allImages.map((img, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setActiveImageIndex(i)}
+                          className={`w-14 h-14 rounded-xl border-2 p-1 bg-slate-50 shrink-0 transition overflow-hidden cursor-pointer ${
+                            activeImageIndex === i
+                              ? 'border-blue-600 ring-2 ring-blue-500/20 shadow-xs'
+                              : 'border-slate-200 hover:border-slate-300 opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          <img 
+                            src={img} 
+                            alt={`Thumbnail ${i + 1}`} 
+                            className="w-full h-full object-contain" 
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
+                            }}
+                          />
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Pagination Dots */}
+                    <div className="flex items-center justify-center gap-1.5 pt-0.5">
+                      {allImages.map((_, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setActiveImageIndex(i)}
+                          className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                            activeImageIndex === i
+                              ? 'w-5 bg-blue-600'
+                              : 'w-1.5 bg-slate-300 hover:bg-slate-400'
+                          }`}
+                          title={`Go to image ${i + 1}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Multi-Angle Grid View Mode */
+              <div className="grid grid-cols-2 gap-2 max-h-[360px] overflow-y-auto pr-1">
+                {allImages.map((img, i) => (
+                  <div
                     key={i}
-                    onClick={() => setSelectedImage(img)}
-                    className={`w-16 h-16 rounded-xl border-2 p-1 bg-slate-50 shrink-0 transition overflow-hidden ${
-                      selectedImage === img ? 'border-blue-600' : 'border-slate-200 hover:border-slate-300'
+                    onClick={() => {
+                      setActiveImageIndex(i);
+                      setIsLightboxOpen(true);
+                    }}
+                    className={`relative aspect-square rounded-xl border p-2 bg-slate-50 overflow-hidden cursor-pointer group transition ${
+                      activeImageIndex === i ? 'border-blue-600 ring-2 ring-blue-500/20' : 'border-slate-200 hover:border-slate-300'
                     }`}
                   >
-                    <img src={img} alt="thumb" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-                  </button>
+                    <img
+                      src={img}
+                      alt={`${product.name} angle ${i + 1}`}
+                      className="w-full h-full object-contain group-hover:scale-105 transition"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
+                      }}
+                    />
+                    <span className="absolute bottom-1.5 right-1.5 bg-slate-900/70 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                      #{i + 1}
+                    </span>
+                  </div>
                 ))}
               </div>
             )}
@@ -134,8 +467,32 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </span>
                 <div className="flex items-center gap-2">
                   <button
+                    id="modal-share-icon-btn"
+                    type="button"
+                    onClick={handleShare}
+                    className={`p-2 rounded-xl border transition flex items-center justify-center cursor-pointer ${
+                      shareStatus !== 'idle'
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-600'
+                        : 'border-slate-200 text-slate-600 hover:text-blue-600 hover:bg-slate-50'
+                    }`}
+                    title={
+                      shareStatus === 'copied'
+                        ? 'Link copied to clipboard!'
+                        : shareStatus === 'shared'
+                        ? 'Product shared!'
+                        : 'Share product via Web Share API'
+                    }
+                    aria-label="Share product"
+                  >
+                    {shareStatus !== 'idle' ? (
+                      <Check className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <Share2 className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
                     onClick={() => onToggleWishlist(product.id)}
-                    className={`p-2 rounded-xl border transition ${
+                    className={`p-2 rounded-xl border transition cursor-pointer ${
                       isWishlisted ? 'border-rose-300 bg-rose-50 text-rose-500' : 'border-slate-200 text-slate-600 hover:text-rose-500'
                     }`}
                     title="Wishlist"
@@ -144,7 +501,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   </button>
                   <button
                     onClick={() => onToggleCompare(product)}
-                    className={`p-2 rounded-xl border transition ${
+                    className={`p-2 rounded-xl border transition cursor-pointer ${
                       isCompared ? 'border-blue-300 bg-blue-50 text-blue-600' : 'border-slate-200 text-slate-600 hover:text-blue-600'
                     }`}
                     title="Compare"
@@ -298,6 +655,36 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   <span>Order via WhatsApp</span>
                 </a>
               </div>
+
+              {/* Share Product Link Button */}
+              <button
+                id="modal-share-product-btn"
+                type="button"
+                onClick={handleShare}
+                className={`w-full py-2.5 px-4 rounded-xl font-bold text-xs border transition flex items-center justify-center gap-2 cursor-pointer ${
+                  shareStatus !== 'idle'
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                    : 'border-slate-200/90 bg-white hover:bg-slate-50 text-slate-700 hover:text-blue-600 hover:border-blue-200 shadow-2xs'
+                }`}
+                title="Share this product using the Web Share API"
+              >
+                {shareStatus === 'copied' ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-600" />
+                    <span>Product Link Copied to Clipboard!</span>
+                  </>
+                ) : shareStatus === 'shared' ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-600" />
+                    <span>Product Shared Successfully!</span>
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-4 h-4 text-blue-600" />
+                    <span>Share Product Link</span>
+                  </>
+                )}
+              </button>
             </div>
 
           </div>
@@ -366,6 +753,96 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Fullscreen High-Resolution Lightbox Overlay */}
+        {isLightboxOpen && (
+          <div 
+            className="fixed inset-0 z-60 bg-black/95 backdrop-blur-md flex flex-col justify-between p-4 sm:p-6 animate-in fade-in duration-200"
+            onClick={() => setIsLightboxOpen(false)}
+          >
+            {/* Lightbox Top Bar */}
+            <div className="flex items-center justify-between z-20 text-white" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm text-white">{product.name}</span>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/10 text-white/80 font-mono">
+                  {activeImageIndex + 1} / {allImages.length}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsLightboxOpen(false)}
+                className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer"
+                title="Close lightbox (Esc)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Lightbox Center Image Stage */}
+            <div 
+              className="relative flex-1 flex items-center justify-center overflow-hidden my-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {allImages.length > 1 && (
+                <button
+                  type="button"
+                  onClick={handlePrevImage}
+                  className="absolute left-2 sm:left-6 z-20 w-12 h-12 rounded-full bg-black/50 hover:bg-black/80 border border-white/20 text-white flex items-center justify-center transition cursor-pointer shadow-lg"
+                  title="Previous image (Left Arrow)"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+              )}
+
+              <img
+                src={allImages[activeImageIndex] || DEFAULT_PRODUCT_IMAGE}
+                alt={`${product.name} high-res view ${activeImageIndex + 1}`}
+                className="max-h-[75vh] max-w-[90vw] object-contain select-none"
+                referrerPolicy="no-referrer"
+              />
+
+              {allImages.length > 1 && (
+                <button
+                  type="button"
+                  onClick={handleNextImage}
+                  className="absolute right-2 sm:right-6 z-20 w-12 h-12 rounded-full bg-black/50 hover:bg-black/80 border border-white/20 text-white flex items-center justify-center transition cursor-pointer shadow-lg"
+                  title="Next image (Right Arrow)"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              )}
+            </div>
+
+            {/* Lightbox Bottom Thumbnail Carousel */}
+            {allImages.length > 1 && (
+              <div 
+                className="flex items-center justify-center gap-2 overflow-x-auto py-2 z-20 scrollbar-none"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {allImages.map((img, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setActiveImageIndex(i)}
+                    className={`w-14 h-14 rounded-xl border-2 p-1 bg-white/5 shrink-0 transition overflow-hidden cursor-pointer ${
+                      activeImageIndex === i
+                        ? 'border-blue-500 ring-2 ring-blue-500/50 opacity-100 scale-105'
+                        : 'border-white/20 hover:border-white/50 opacity-60 hover:opacity-90'
+                    }`}
+                  >
+                    <img 
+                      src={img} 
+                      alt={`Thumbnail ${i + 1}`} 
+                      className="w-full h-full object-contain"
+                      referrerPolicy="no-referrer" 
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     </div>

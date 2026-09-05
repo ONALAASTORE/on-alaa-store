@@ -19,8 +19,11 @@ export interface Product {
   description: string;
   features: string[];
   specs: Record<string, string>;
-  image: string;
-  galleryImages: string[];
+  image: string; // Primary featured image
+  galleryImages: string[]; // List of all gallery image URLs
+  imageUrls?: string[]; // Array of product image URLs
+  image_urls?: string[]; // Supabase / PostgreSQL array representation of all product images
+  additional_images?: string[]; // Supplementary gallery images excluding primary
   basePriceUSD: number;
   originalPriceUSD?: number; // For discount display
   variants: ProductVariant[];

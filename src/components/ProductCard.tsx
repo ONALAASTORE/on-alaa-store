@@ -7,10 +7,12 @@ import {
   Star, 
   ShieldCheck, 
   Truck,
-  Check
+  Check,
+  Images
 } from 'lucide-react';
 import { Product, Currency, ProductVariant } from '../types';
 import { formatPrice } from '../utils/currency';
+import { getProductImages, DEFAULT_PRODUCT_IMAGE } from '../utils/productImages';
 
 interface ProductCardProps {
   product: Product;
@@ -38,6 +40,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const activeVariant = product.variants[selectedVariantIndex] || defaultVariant;
 
   const [addedAnimation, setAddedAnimation] = React.useState(false);
+
+  // Multi-image handling
+  const productImages = getProductImages(product);
+  const primaryImage = productImages[0] || DEFAULT_PRODUCT_IMAGE;
+  const secondaryImage = productImages.length > 1 ? productImages[1] : null;
 
   const handleAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -120,14 +127,37 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       </div>
 
       {/* Product Image Stage */}
-      <div className="relative aspect-square bg-slate-50 overflow-hidden p-6 flex items-center justify-center">
+      <div className="relative aspect-square bg-slate-50 overflow-hidden p-6 flex items-center justify-center group/img">
         <img
-          src={product.image}
+          src={primaryImage}
           alt={product.name}
-          className="w-full h-full object-contain object-center group-hover:scale-108 transition-transform duration-500"
+          className={`w-full h-full object-contain object-center transition-all duration-500 ${
+            secondaryImage ? 'group-hover/img:opacity-0 group-hover/img:scale-95 group-hover:scale-105' : 'group-hover:scale-108'
+          }`}
           loading="lazy"
           referrerPolicy="no-referrer"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
+          }}
         />
+        {secondaryImage && (
+          <img
+            src={secondaryImage}
+            alt={`${product.name} alternate view`}
+            className="w-full h-full object-contain object-center absolute inset-0 p-6 transition-all duration-500 opacity-0 scale-95 group-hover/img:opacity-100 group-hover/img:scale-108"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
+            }}
+          />
+        )}
+        {productImages.length > 1 && (
+          <div className="absolute bottom-2.5 right-2.5 z-10 bg-slate-900/75 backdrop-blur-xs text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 opacity-80 group-hover:opacity-100 transition shadow-xs pointer-events-none">
+            <Images className="w-3 h-3" />
+            <span>{productImages.length}</span>
+          </div>
+        )}
       </div>
 
       {/* Product Information Body */}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   X, 
   Plus, 
@@ -7,9 +7,17 @@ import {
   Tag, 
   Layers, 
   CheckCircle2, 
-  AlertCircle 
+  AlertCircle,
+  Upload,
+  Image as ImageIcon,
+  Star,
+  ChevronLeft,
+  ChevronRight,
+  Link2,
+  FileText
 } from 'lucide-react';
 import { Product } from '../../types';
+import { getProductImages, DEFAULT_PRODUCT_IMAGE, cleanImageUrls } from '../../utils/productImages';
 
 
 interface ProductFormModalProps {
@@ -33,7 +41,19 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const [originalPriceUSD, setOriginalPriceUSD] = useState<number | ''>(
     productToEdit?.originalPriceUSD || ''
   );
-  const [image, setImage] = useState(productToEdit?.image || '');
+  
+  // Multi-image management state
+  const [imagesList, setImagesList] = useState<string[]>(() => {
+    return getProductImages(productToEdit);
+  });
+  const [singleUrlInput, setSingleUrlInput] = useState('');
+  const [bulkUrlsInput, setBulkUrlsInput] = useState('');
+  const [isBulkUrlOpen, setIsBulkUrlOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [imageError, setImageError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [description, setDescription] = useState(productToEdit?.description || '');
   const [inStock, setInStock] = useState<boolean>(productToEdit ? productToEdit.inStock : true);
   const [condition, setCondition] = useState<'Brand New (Sealed)' | 'Open Box' | 'Certified Pre-Owned'>(
@@ -95,6 +115,147 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     setSpecsList(updated);
   };
 
+  // Multi-image file processing
+  const processImageFiles = (files: FileList | File[]) => {
+    const validFiles = Array.from(files).filter((file) => file.type.startsWith('image/'));
+    if (validFiles.length === 0) {
+      setImageError('Please select valid image files (JPG, PNG, WebP, GIF, SVG)');
+      return;
+    }
+    setUploadLoading(true);
+    setImageError('');
+
+    const fileReaders = validFiles.map((file) => {
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            resolve(reader.result);
+          } else {
+            reject(new Error('Failed reading image file'));
+          }
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(fileReaders)
+      .then((newImages) => {
+        setImagesList((prev) => {
+          const filteredPrev = prev.filter((img) => img !== DEFAULT_PRODUCT_IMAGE);
+          return [...filteredPrev, ...newImages];
+        });
+      })
+      .catch((err) => {
+        console.error('File upload error:', err);
+        setImageError('Could not process some image files.');
+      })
+      .finally(() => {
+        setUploadLoading(false);
+      });
+  };
+
+  // Drag & drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processImageFiles(e.dataTransfer.files);
+    }
+  };
+
+  // Add single image URL
+  const handleAddSingleUrl = () => {
+    const trimmed = singleUrlInput.trim();
+    if (!trimmed) return;
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://') && !trimmed.startsWith('data:image/')) {
+      setImageError('Please enter a valid image URL starting with http:// or https://');
+      return;
+    }
+    setImagesList((prev) => {
+      const filteredPrev = prev.filter((img) => img !== DEFAULT_PRODUCT_IMAGE);
+      if (filteredPrev.includes(trimmed)) return filteredPrev;
+      return [...filteredPrev, trimmed];
+    });
+    setSingleUrlInput('');
+    setImageError('');
+  };
+
+  // Add bulk image URLs simultaneously
+  const handleAddBulkUrls = () => {
+    const trimmed = bulkUrlsInput.trim();
+    if (!trimmed) return;
+    const extracted = trimmed
+      .split(/[\n,;]+/)
+      .map((u) => u.trim())
+      .filter((u) => u.length > 0 && (u.startsWith('http://') || u.startsWith('https://') || u.startsWith('data:image/')));
+
+    if (extracted.length === 0) {
+      setImageError('No valid image URLs found. Please ensure URLs start with http:// or https://');
+      return;
+    }
+
+    setImagesList((prev) => {
+      const filteredPrev = prev.filter((img) => img !== DEFAULT_PRODUCT_IMAGE);
+      const combined = [...filteredPrev];
+      for (const url of extracted) {
+        if (!combined.includes(url)) {
+          combined.push(url);
+        }
+      }
+      return combined;
+    });
+
+    setBulkUrlsInput('');
+    setIsBulkUrlOpen(false);
+    setImageError('');
+  };
+
+  // Move image to primary position (index 0)
+  const handleSetPrimary = (index: number) => {
+    if (index <= 0 || index >= imagesList.length) return;
+    setImagesList((prev) => {
+      const target = prev[index];
+      const remaining = prev.filter((_, i) => i !== index);
+      return [target, ...remaining];
+    });
+  };
+
+  // Reorder image left or right
+  const handleMoveImage = (index: number, direction: 'left' | 'right') => {
+    const targetIndex = direction === 'left' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= imagesList.length) return;
+    setImagesList((prev) => {
+      const copy = [...prev];
+      const temp = copy[index];
+      copy[index] = copy[targetIndex];
+      copy[targetIndex] = temp;
+      return copy;
+    });
+  };
+
+  // Remove individual image
+  const handleRemoveImage = (index: number) => {
+    setImagesList((prev) => {
+      const filtered = prev.filter((_, i) => i !== index);
+      return filtered.length > 0 ? filtered : [DEFAULT_PRODUCT_IMAGE];
+    });
+  };
+
   // Save product
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,7 +268,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       return;
     }
 
-    const fallbackImage = image.trim() || 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?auto=format&fit=crop&w=1000&q=80';
+    // Clean and normalize multi-image list
+    const finalImages = cleanImageUrls(imagesList);
+    const primaryImage = finalImages[0] || DEFAULT_PRODUCT_IMAGE;
 
     // Compile dynamic specs object
     const compiledSpecs: Record<string, string> = {};
@@ -128,8 +291,11 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       description: description.trim() || `${name} with official Lebanese warranty and nationwide express delivery.`,
       features: features.length > 0 ? features : ['Official Lebanese Agency Warranty', 'Brand New Original Unit'],
       specs: compiledSpecs,
-      image: fallbackImage,
-      galleryImages: productToEdit?.galleryImages?.length ? productToEdit.galleryImages : [fallbackImage],
+      image: primaryImage,
+      galleryImages: finalImages,
+      imageUrls: finalImages,
+      image_urls: finalImages,
+      additional_images: finalImages.slice(1),
       basePriceUSD: Number(basePriceUSD),
       originalPriceUSD: originalPriceUSD !== '' && Number(originalPriceUSD) > Number(basePriceUSD) ? Number(originalPriceUSD) : undefined,
       variants: productToEdit?.variants?.length 
@@ -289,30 +455,244 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               </div>
             </div>
 
-            {/* Image URL with live preview thumbnail */}
-            <div className="sm:col-span-2 space-y-2">
-              <label className="block text-xs font-bold text-slate-300">
-                Primary Product Image URL
-              </label>
-              <div className="flex gap-3">
+            {/* Multi-Image Upload & Media Gallery Section */}
+            <div className="sm:col-span-2 space-y-3 bg-slate-950/70 border border-slate-800/90 rounded-2xl p-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-red-500/10 border border-red-500/20 text-[#FF0000] flex items-center justify-center">
+                    <ImageIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-white block">
+                      Product Images & Media Gallery
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      Upload multiple image files or enter image URLs. The first image is highlighted as the ★ Primary Cover.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-slate-300">
+                    {imagesList.length} {imagesList.length === 1 ? 'image' : 'images'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkUrlOpen(!isBulkUrlOpen)}
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white bg-slate-900 transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Link2 className="w-3 h-3 text-[#FF0000]" />
+                    <span>{isBulkUrlOpen ? 'Hide Bulk URLs' : 'Paste Multiple URLs'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Error Notification */}
+              {imageError && (
+                <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-800 text-red-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                  <span>{imageError}</span>
+                </div>
+              )}
+
+              {/* Drag & Drop File Upload Zone */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-5 text-center transition cursor-pointer flex flex-col items-center justify-center gap-2 ${
+                  isDragging
+                    ? 'border-[#FF0000] bg-red-950/20 text-white'
+                    : 'border-slate-800 hover:border-slate-700 bg-slate-900/40 text-slate-400 hover:text-slate-300'
+                }`}
+              >
                 <input
-                  type="url"
-                  value={image}
-                  onChange={(e) => setImage(e.target.value)}
-                  placeholder="https://images.unsplash.com/... or CDN link"
-                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs font-medium focus:border-[#FF0000] outline-none"
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      processImageFiles(e.target.files);
+                    }
+                  }}
                 />
-                {image && (
-                  <div className="w-11 h-11 rounded-xl bg-slate-950 border border-slate-800 p-1 shrink-0 flex items-center justify-center overflow-hidden">
-                    <img 
-                      src={image} 
-                      alt="Preview" 
-                      className="w-full h-full object-contain rounded" 
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?auto=format&fit=crop&w=300&q=80';
-                      }}
-                    />
+                <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-400 group-hover:text-white">
+                  <Upload className="w-5 h-5 text-red-500" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white">
+                    {uploadLoading ? 'Processing files...' : 'Click to browse or drag & drop multiple image files'}
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    Supports selecting multiple PNG, JPG, WebP, GIF files simultaneously
+                  </div>
+                </div>
+              </div>
+
+              {/* Bulk URLs Input Drawer */}
+              {isBulkUrlOpen && (
+                <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-2 animate-in fade-in">
+                  <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Paste Multiple URLs Simultaneously</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={bulkUrlsInput}
+                    onChange={(e) => setBulkUrlsInput(e.target.value)}
+                    placeholder="Paste image URLs separated by newlines, commas, or spaces:&#10;https://images.unsplash.com/photo-1...&#10;https://images.unsplash.com/photo-2..."
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-xs font-mono placeholder-slate-600 focus:border-[#FF0000] outline-none"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsBulkUrlOpen(false)}
+                      className="px-3 py-1.5 text-xs text-slate-400 hover:text-white rounded-lg cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddBulkUrls}
+                      className="px-3 py-1.5 bg-[#FF0000] hover:bg-red-600 text-white font-bold text-xs rounded-lg transition cursor-pointer"
+                    >
+                      Import All URLs
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Single URL Quick Add Bar */}
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Link2 className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
+                  <input
+                    type="url"
+                    value={singleUrlInput}
+                    onChange={(e) => setSingleUrlInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddSingleUrl();
+                      }
+                    }}
+                    placeholder="Enter image URL (e.g. https://... or CDN link)"
+                    className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs font-medium focus:border-[#FF0000] outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddSingleUrl}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add URL</span>
+                </button>
+              </div>
+
+              {/* Uploaded Images Gallery Grid */}
+              <div className="pt-2">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center justify-between">
+                  <span>Current Gallery Images ({imagesList.length})</span>
+                  {imagesList.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setImagesList([DEFAULT_PRODUCT_IMAGE])}
+                      className="text-[10px] text-slate-500 hover:text-red-400 transition"
+                    >
+                      Reset Images
+                    </button>
+                  )}
+                </div>
+
+                {imagesList.length === 0 ? (
+                  <div className="p-6 text-center border border-slate-800 rounded-xl bg-slate-950/40 text-slate-500 text-xs">
+                    No images added yet. Upload files or enter URLs above.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {imagesList.map((imgUrl, index) => (
+                      <div
+                        key={index}
+                        className={`group relative rounded-xl border p-2 bg-slate-950 flex flex-col justify-between overflow-hidden transition ${
+                          index === 0
+                            ? 'border-amber-500/80 ring-1 ring-amber-500/30 shadow-lg shadow-amber-500/10'
+                            : 'border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        {/* Primary Badge or Make Primary Button */}
+                        <div className="flex items-center justify-between mb-1.5 z-10">
+                          {index === 0 ? (
+                            <span className="bg-amber-500 text-black text-[9px] font-extrabold px-2 py-0.5 rounded flex items-center gap-1 shadow-xs">
+                              <Star className="w-2.5 h-2.5 fill-black" />
+                              Primary Cover
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSetPrimary(index)}
+                              className="text-[9px] font-bold text-slate-400 hover:text-amber-400 flex items-center gap-1 transition bg-slate-900/90 px-1.5 py-0.5 rounded border border-slate-800 cursor-pointer"
+                              title="Set this image as primary cover"
+                            >
+                              <Star className="w-2.5 h-2.5" />
+                              Make Primary
+                            </button>
+                          )}
+                          <span className="text-[10px] font-mono text-slate-500 font-bold">
+                            #{index + 1}
+                          </span>
+                        </div>
+
+                        {/* Image Preview Canvas */}
+                        <div className="aspect-square w-full rounded-lg bg-slate-900/60 p-2 flex items-center justify-center overflow-hidden mb-2">
+                          <img
+                            src={imgUrl}
+                            alt={`Preview ${index + 1}`}
+                            className="w-full h-full object-contain rounded"
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
+                            }}
+                          />
+                        </div>
+
+                        {/* Card Footer: Reordering & Delete Controls */}
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-900">
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={index === 0}
+                              onClick={() => handleMoveImage(index, 'left')}
+                              className="p-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
+                              title="Move earlier"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={index === imagesList.length - 1}
+                              onClick={() => handleMoveImage(index, 'right')}
+                              className="p-1 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
+                              title="Move later"
+                            >
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveImage(index)}
+                            className="p-1 rounded bg-slate-900 hover:bg-red-950 text-slate-500 hover:text-red-400 transition cursor-pointer"
+                            title="Remove image"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

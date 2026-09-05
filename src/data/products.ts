@@ -1,6 +1,6 @@
 import { Product } from '../types';
 
-export const PRODUCTS: Product[] = [
+const INITIAL_PRODUCTS: Product[] = [
   {
     id: 'iphone-16-pro-max',
     name: 'Apple iPhone 16 Pro Max',
@@ -587,3 +587,12 @@ export const PRODUCTS: Product[] = [
     freeDelivery: true
   }
 ];
+
+export const PRODUCTS: Product[] = INITIAL_PRODUCTS.map((p) => {
+  const images = p.galleryImages && p.galleryImages.length > 0 ? p.galleryImages : [p.image];
+  return {
+    ...p,
+    imageUrls: p.imageUrls || images,
+    image_urls: p.image_urls || images,
+  };
+});

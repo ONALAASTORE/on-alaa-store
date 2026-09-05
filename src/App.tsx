@@ -5,6 +5,7 @@ import {
   ArrowUpDown, 
   Search, 
   MessageCircle,
+  X,
 } from 'lucide-react';
 import { Currency, Product, CartItem, ProductVariant, FilterState, StoreSettings } from './types';
 import { PRODUCTS } from './data/products';
@@ -13,6 +14,7 @@ import { Header } from './components/Header';
 import { HeroBanner } from './components/HeroBanner';
 import { ProductCard } from './components/ProductCard';
 import { ProductDetailModal } from './components/ProductDetailModal';
+import { PriceRangeSlider } from './components/PriceRangeSlider';
 import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal } from './components/CheckoutModal';
 import { CompareModal } from './components/CompareModal';
@@ -206,6 +208,46 @@ export function App() {
       console.error('Failed to save wishlist to localStorage', e);
     }
   }, [wishlistIds]);
+
+  // Support direct product link sharing (URL query ?product=...)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const prodId = params.get('product');
+      if (prodId) {
+        const found = productsList.find((p) => p.id === prodId);
+        if (found) {
+          setSelectedProduct(found);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [productsList]);
+
+  const handleOpenProductDetail = (product: Product) => {
+    setSelectedProduct(product);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('product', product.id);
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleCloseProductDetail = () => {
+    setSelectedProduct(null);
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('product')) {
+        url.searchParams.delete('product');
+        window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   // Route Handlers
   const handleNavigateToAdmin = () => {
@@ -528,7 +570,7 @@ export function App() {
                   <SlidersHorizontal className="w-4 h-4 text-blue-600" />
                   <span>Refine Catalog</span>
                 </h3>
-                {(filterState.brand !== 'All Brands' || filterState.condition !== 'all' || filterState.onlyInStock || filterState.searchQuery) && (
+                {(filterState.brand !== 'All Brands' || filterState.condition !== 'all' || filterState.onlyInStock || filterState.searchQuery || filterState.minPriceUSD > 0 || filterState.maxPriceUSD < 3000) && (
                   <button
                     onClick={() =>
                       setFilterState({
@@ -570,6 +612,23 @@ export function App() {
                   ))}
                 </div>
               </div>
+
+              {/* Slider-based Price Range Filter */}
+              <PriceRangeSlider
+                minPriceUSD={filterState.minPriceUSD}
+                maxPriceUSD={filterState.maxPriceUSD}
+                onChange={(min, max) =>
+                  setFilterState((prev) => ({
+                    ...prev,
+                    minPriceUSD: min,
+                    maxPriceUSD: max,
+                  }))
+                }
+                currency={currency}
+                minLimit={0}
+                maxLimit={3000}
+                step={25}
+              />
 
               {/* Condition Filter */}
               <div className="space-y-2 pt-3 border-t border-slate-100">
@@ -639,15 +698,79 @@ export function App() {
           <div className="lg:col-span-9 space-y-6">
             
             {/* Active Filters / Result count */}
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>
-                Showing <strong className="text-slate-900 font-bold">{filteredProducts.length}</strong> items in catalog
-              </span>
-              {filterState.searchQuery && (
-                <span className="bg-slate-200/80 px-2.5 py-1 rounded-full text-slate-800 font-medium">
-                  Search: "{filterState.searchQuery}"
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              <div className="flex items-center gap-2">
+                <span>
+                  Showing <strong className="text-slate-900 font-bold">{filteredProducts.length}</strong> items in catalog
                 </span>
-              )}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {filterState.searchQuery && (
+                  <span className="inline-flex items-center gap-1 bg-slate-200/80 px-2.5 py-1 rounded-full text-slate-800 font-medium">
+                    <span>Search: "{filterState.searchQuery}"</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilterState((prev) => ({ ...prev, searchQuery: '' }))}
+                      className="hover:text-red-500 transition cursor-pointer"
+                      title="Clear search"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {(filterState.minPriceUSD > 0 || filterState.maxPriceUSD < 3000) && (
+                  <span className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200/80 px-2.5 py-1 rounded-full text-blue-700 font-medium">
+                    <span>Price: ${filterState.minPriceUSD} – ${filterState.maxPriceUSD}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilterState((prev) => ({ ...prev, minPriceUSD: 0, maxPriceUSD: 3000 }))}
+                      className="hover:text-blue-900 transition cursor-pointer"
+                      title="Reset price filter"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {filterState.brand !== 'All Brands' && (
+                  <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full text-slate-700 font-medium">
+                    <span>{filterState.brand}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilterState((prev) => ({ ...prev, brand: 'All Brands' }))}
+                      className="hover:text-red-500 transition cursor-pointer"
+                      title="Clear brand filter"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {filterState.condition !== 'all' && (
+                  <span className="inline-flex items-center gap-1 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full text-slate-700 font-medium">
+                    <span>{filterState.condition}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilterState((prev) => ({ ...prev, condition: 'all' }))}
+                      className="hover:text-red-500 transition cursor-pointer"
+                      title="Clear condition filter"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                {filterState.onlyInStock && (
+                  <span className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full text-emerald-700 font-medium">
+                    <span>In Stock</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilterState((prev) => ({ ...prev, onlyInStock: false }))}
+                      className="hover:text-emerald-900 transition cursor-pointer"
+                      title="Clear in-stock filter"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Products Grid */}
@@ -692,7 +815,7 @@ export function App() {
                     onToggleWishlist={handleToggleWishlist}
                     onToggleCompare={handleToggleCompare}
                     onAddToCart={(p, v) => handleAddToCart(p, v, 1)}
-                    onQuickView={setSelectedProduct}
+                    onQuickView={handleOpenProductDetail}
                   />
                 ))}
               </div>
@@ -708,7 +831,7 @@ export function App() {
         <ProductDetailModal
           product={selectedProduct}
           currency={currency}
-          onClose={() => setSelectedProduct(null)}
+          onClose={handleCloseProductDetail}
           isWishlisted={wishlistIds.includes(selectedProduct.id)}
           onToggleWishlist={handleToggleWishlist}
           isCompared={comparedProducts.some((p) => p.id === selectedProduct.id)}
@@ -779,7 +902,7 @@ export function App() {
         }}
         onQuickView={(p) => {
           setIsWishlistOpen(false);
-          setSelectedProduct(p);
+          handleOpenProductDetail(p);
         }}
       />
 

@@ -24,6 +24,7 @@ import {
 import { Product, Currency } from '../types';
 import { CATEGORIES } from '../data/categories';
 import { formatPrice } from '../utils/currency';
+import { debounce } from '../utils/debounce';
 
 interface SearchAutocompleteProps {
   searchQuery: string;
@@ -87,6 +88,47 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Local input state for smooth typing without lag
+  const [inputValue, setInputValue] = useState(searchQuery);
+
+  // Keep input value synchronized if searchQuery prop changes externally (e.g. clear, brand click)
+  useEffect(() => {
+    setInputValue(searchQuery);
+  }, [searchQuery]);
+
+  // Debounced search logic to execute search query processing only after the user stops typing for 300ms
+  const debouncedSearch = useMemo(() => {
+    return debounce((query: string) => {
+      onSearchChange(query);
+      setIsSearching(false);
+    }, 300);
+  }, [onSearchChange]);
+
+  // Clean up debounced search timer on component unmount
+  useEffect(() => {
+    return () => {
+      debouncedSearch.cancel();
+    };
+  }, [debouncedSearch]);
+
+  // Search input change handler with 300ms debouncing utility
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nextVal = e.target.value;
+    setInputValue(nextVal);
+    if (!isOpen) setIsOpen(true);
+    setSelectedIndex(-1);
+
+    if (nextVal.trim()) {
+      setIsSearching(true);
+      debouncedSearch(nextVal);
+    } else {
+      // Immediate reset when input is cleared completely
+      debouncedSearch.cancel();
+      setIsSearching(false);
+      onSearchChange('');
+    }
+  };
 
   // Web Speech API Voice-to-Text State
   const [isListening, setIsListening] = useState(false);
@@ -157,7 +199,9 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           transcript += event.results[i][0].transcript;
         }
         if (transcript.trim()) {
-          onSearchChange(transcript);
+          setInputValue(transcript);
+          setIsSearching(true);
+          debouncedSearch(transcript);
           if (!isOpen) setIsOpen(true);
         }
       };
@@ -178,6 +222,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
 
       recognition.onend = () => {
         setIsListening(false);
+        debouncedSearch.flush();
         inputRef.current?.focus();
       };
 
@@ -188,19 +233,6 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       setSpeechError('Could not activate microphone voice input.');
     }
   };
-
-  // Subtle loading transition indicator when typing query
-  useEffect(() => {
-    if (searchQuery.trim()) {
-      setIsSearching(true);
-      const timer = setTimeout(() => {
-        setIsSearching(false);
-      }, 160);
-      return () => clearTimeout(timer);
-    } else {
-      setIsSearching(false);
-    }
-  }, [searchQuery]);
 
   // Save query to recent searches
   const saveRecentSearch = (term: string) => {
@@ -325,7 +357,10 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       setSelectedIndex((prev) => (prev > 0 ? prev - 1 : selectableItemsCount - 1));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (selectedIndex >= 0 && queryTrimmed) {
+      debouncedSearch.cancel();
+      setIsSearching(false);
+
+      if (selectedIndex >= 0 && (queryTrimmed || inputValue.trim())) {
         // Find which item was selected
         let currentIndex = 0;
         // Check categories
@@ -340,6 +375,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
         // Check brands
         if (selectedIndex < currentIndex + matchingBrands.length) {
           const brand = matchingBrands[selectedIndex - currentIndex];
+          setInputValue(brand);
           onSearchChange(brand);
           saveRecentSearch(brand);
           setIsOpen(false);
@@ -354,9 +390,10 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
         }
       }
 
-      // Default Enter: commit search
-      if (searchQuery.trim()) {
-        saveRecentSearch(searchQuery);
+      // Default Enter: commit currently typed search query immediately without waiting for debounce
+      if (inputValue.trim()) {
+        onSearchChange(inputValue.trim());
+        saveRecentSearch(inputValue.trim());
       }
       setIsOpen(false);
       scrollToCatalog();
@@ -367,6 +404,9 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   };
 
   const handleProductClick = (product: Product) => {
+    debouncedSearch.cancel();
+    setIsSearching(false);
+    setInputValue(product.name);
     saveRecentSearch(product.name);
     setIsOpen(false);
     if (onSelectProduct) {
@@ -378,6 +418,9 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   };
 
   const handleSuggestionClick = (term: string) => {
+    debouncedSearch.cancel();
+    setIsSearching(false);
+    setInputValue(term);
     onSearchChange(term);
     saveRecentSearch(term);
     setIsOpen(false);
@@ -385,6 +428,8 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   };
 
   const handleCategoryClick = (catId: string, catName: string) => {
+    debouncedSearch.cancel();
+    setIsSearching(false);
     saveRecentSearch(catName);
     onSelectCategory?.(catId);
     setIsOpen(false);
@@ -441,28 +486,49 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
             : 'border-slate-200/90'
         }`}
       >
-        <div className="absolute left-3.5 flex items-center pointer-events-none text-slate-400">
-          <Search className={`w-4 h-4 transition-all duration-200 ${
-            isListening 
-              ? 'text-red-500 animate-pulse' 
-              : focusedViaSlash 
-              ? 'text-blue-600 scale-110' 
-              : isOpen 
-              ? 'text-blue-600' 
-              : 'text-slate-400'
-          }`} />
+        <div className="absolute left-3.5 flex items-center pointer-events-none">
+          <AnimatePresence mode="wait">
+            {isSearching ? (
+              <motion.div
+                key="left-search-spinner"
+                id={`${idPrefix}-left-spinner`}
+                initial={{ opacity: 0, scale: 0.7, rotate: -45 }}
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                exit={{ opacity: 0, scale: 0.7, rotate: 45 }}
+                transition={{ duration: 0.15 }}
+                className="text-blue-600 flex items-center justify-center"
+              >
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="left-search-icon"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 0.15 }}
+                className="flex items-center justify-center text-slate-400"
+              >
+                <Search className={`w-4 h-4 transition-all duration-200 ${
+                  isListening 
+                    ? 'text-red-500 animate-pulse' 
+                    : focusedViaSlash 
+                    ? 'text-blue-600 scale-110' 
+                    : isOpen 
+                    ? 'text-blue-600' 
+                    : 'text-slate-400'
+                }`} />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         <input
           ref={inputRef}
           id={`${idPrefix}-search-input`}
           type="text"
-          value={searchQuery}
-          onChange={(e) => {
-            onSearchChange(e.target.value);
-            if (!isOpen) setIsOpen(true);
-            setSelectedIndex(-1);
-          }}
+          value={inputValue}
+          onChange={handleInputChange}
           onFocus={() => {
             setIsOpen(true);
             setSelectedIndex(-1);
@@ -481,14 +547,19 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
             {isSearching && (
               <motion.div
                 key="search-loading-spinner"
-                initial={{ opacity: 0, scale: 0.6 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.6 }}
-                transition={{ duration: 0.15 }}
-                className="flex items-center text-blue-600"
-                title="Searching..."
+                id="header-search-loading-spinner"
+                initial={{ opacity: 0, scale: 0.7, x: 4 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.7, x: 4 }}
+                transition={{ duration: 0.16 }}
+                className="flex items-center gap-1 text-blue-600 px-1.5 py-0.5 rounded-md bg-blue-50/90 border border-blue-200/80 shadow-2xs"
+                title="Processing search query..."
+                aria-label="Searching products"
               >
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 shrink-0" />
+                <span className="hidden sm:inline text-[10px] font-bold text-blue-700 tracking-tight select-none">
+                  Searching
+                </span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -532,7 +603,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
 
           {/* Clear Button with subtle fade-in and rotate entrance animation */}
           <AnimatePresence mode="wait">
-            {searchQuery ? (
+            {inputValue ? (
               <motion.button
                 key="clear-btn"
                 type="button"
@@ -542,6 +613,9 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                 exit={{ opacity: 0, rotate: 90, scale: 0.7 }}
                 transition={{ duration: 0.2, ease: 'easeOut' }}
                 onClick={() => {
+                  debouncedSearch.cancel();
+                  setIsSearching(false);
+                  setInputValue('');
                   onSearchChange('');
                   inputRef.current?.focus();
                 }}
@@ -602,6 +676,17 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           id={`${idPrefix}-suggestions-dropdown`}
           className="absolute left-0 right-0 top-full mt-2 bg-white/98 backdrop-blur-xl rounded-2xl border border-slate-200 shadow-2xl z-50 overflow-hidden divide-y divide-slate-100 max-h-[80vh] sm:max-h-[500px] overflow-y-auto"
         >
+          {/* Subtle Top Loading Line indicator when processing */}
+          {isSearching && (
+            <div className="h-0.5 w-full bg-blue-100 overflow-hidden relative">
+              <motion.div
+                initial={{ x: '-100%' }}
+                animate={{ x: '100%' }}
+                transition={{ repeat: Infinity, duration: 0.85, ease: 'easeInOut' }}
+                className="h-full bg-gradient-to-r from-transparent via-blue-600 to-transparent w-3/4"
+              />
+            </div>
+          )}
           {/* STATE A: User has entered a search query */}
           {queryTrimmed ? (
             <div>

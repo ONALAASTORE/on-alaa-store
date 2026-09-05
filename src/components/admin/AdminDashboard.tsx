@@ -23,6 +23,7 @@ import { Product, StoreSettings, Currency } from '../../types';
 import { ProductFormModal } from './ProductFormModal';
 import { getEmbedVideoUrl, isDirectVideoFile } from '../../utils/video';
 import { formatPrice } from '../../utils/currency';
+import { getProductImages, DEFAULT_PRODUCT_IMAGE } from '../../utils/productImages';
 import { LogoAvatar, Brand3DText } from '../brand';
 
 interface AdminDashboardProps {
@@ -420,21 +421,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <tbody className="divide-y divide-slate-800/60">
                       {filteredProducts.map((product) => {
                         const specsEntries = Object.entries(product.specs || {}).slice(0, 3);
+                        const productImgs = getProductImages(product);
+                        const primaryImg = productImgs[0] || DEFAULT_PRODUCT_IMAGE;
                         return (
                           <tr key={product.id} className="hover:bg-slate-800/40 transition">
                             {/* Product Info */}
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 p-1 flex items-center justify-center shrink-0 overflow-hidden">
+                                <div className="relative w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 p-1 flex items-center justify-center shrink-0 overflow-hidden group">
                                   <img
-                                    src={product.image}
+                                    src={primaryImg}
                                     alt={product.name}
                                     className="w-full h-full object-contain rounded"
                                     referrerPolicy="no-referrer"
                                     onError={(e) => {
-                                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?auto=format&fit=crop&w=300&q=80';
+                                      (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
                                     }}
                                   />
+                                  {productImgs.length > 1 && (
+                                    <span className="absolute bottom-0.5 right-0.5 bg-slate-900/90 text-white font-mono text-[9px] font-bold px-1 rounded">
+                                      {productImgs.length}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="min-w-0">
                                   <div className="font-bold text-white text-xs truncate max-w-xs sm:max-w-sm">
@@ -444,6 +452,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     <span className="text-slate-500 font-mono text-[10px]">ID: {product.id}</span>
                                     <span>•</span>
                                     <span className="text-amber-400 font-medium">{product.condition}</span>
+                                    {productImgs.length > 1 && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="text-blue-400 font-medium">{productImgs.length} photos</span>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
                               </div>
