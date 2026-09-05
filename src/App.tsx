@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { 
   SlidersHorizontal, 
   ArrowUpDown, 
@@ -35,6 +36,33 @@ const DEFAULT_SETTINGS: StoreSettings = {
   exchangeRateLBP: 89500,
   whatsappNumber: '+961 71 135 241',
   supportEmail: 'alaastoreon@gmail.com',
+};
+
+// Smooth, fluid framer-motion transition variants between views
+const pageTransitionVariants: Variants = {
+  initial: {
+    opacity: 0,
+    y: 16,
+    scale: 0.995,
+  },
+  animate: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      duration: 0.32,
+      ease: [0.22, 1, 0.36, 1],
+    },
+  },
+  exit: {
+    opacity: 0,
+    y: -16,
+    scale: 0.995,
+    transition: {
+      duration: 0.2,
+      ease: [0.22, 1, 0.36, 1],
+    },
+  },
 };
 
 export function App() {
@@ -355,36 +383,60 @@ export function App() {
     return list.length > 0 ? list : productsList;
   }, [productsList]);
 
-  // VIEW 1: PROTECTED ADMIN DASHBOARD
-  if (currentRoute === 'admin') {
-    return (
-      <AdminDashboard
-        products={productsList}
-        onUpdateProducts={setProductsList}
-        storeSettings={storeSettings}
-        onUpdateStoreSettings={setStoreSettings}
-        onLogout={handleAdminLogout}
-        onNavigateToStore={handleNavigateToStore}
-        currency={currency}
-      />
-    );
-  }
+  // Scroll to top upon navigating between pages/views
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0 });
+  }, [currentRoute]);
 
-  // VIEW 2: ADMIN LOGIN
-  if (currentRoute === 'admin-login') {
-    return (
-      <AdminLogin
-        onLoginSuccess={handleAdminLoginSuccess}
-        onBackToStore={handleNavigateToStore}
-      />
-    );
-  }
-
-  // VIEW 3: PUBLIC STORE FRONT
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between selection:bg-[#FF0000] selection:text-white font-sans">
-      {/* Top Header */}
-      <Header
+    <div className={`min-h-screen transition-colors duration-300 ${
+      currentRoute === 'store' ? 'bg-slate-50 text-slate-900' : 'bg-slate-950 text-slate-100'
+    }`}>
+      <AnimatePresence mode="wait" initial={false}>
+        {currentRoute === 'admin' ? (
+          <motion.div
+            key="admin-dashboard-page"
+            variants={pageTransitionVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="w-full min-h-screen"
+          >
+            <AdminDashboard
+              products={productsList}
+              onUpdateProducts={setProductsList}
+              storeSettings={storeSettings}
+              onUpdateStoreSettings={setStoreSettings}
+              onLogout={handleAdminLogout}
+              onNavigateToStore={handleNavigateToStore}
+              currency={currency}
+            />
+          </motion.div>
+        ) : currentRoute === 'admin-login' ? (
+          <motion.div
+            key="admin-login-page"
+            variants={pageTransitionVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="w-full min-h-screen"
+          >
+            <AdminLogin
+              onLoginSuccess={handleAdminLoginSuccess}
+              onBackToStore={handleNavigateToStore}
+            />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="store-front-page"
+            variants={pageTransitionVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between selection:bg-[#FF0000] selection:text-white font-sans"
+          >
+            {/* Top Header */}
+            <Header
         currency={currency}
         onCurrencyChange={setCurrency}
         searchQuery={filterState.searchQuery}
@@ -746,6 +798,9 @@ export function App() {
         onOpenTradeIn={() => setIsTradeInOpen(true)}
         onOpenContact={() => setIsContactOpen(true)}
       />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

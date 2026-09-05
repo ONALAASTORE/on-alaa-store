@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion } from 'motion/react';
 import { 
   Eye, 
   EyeOff, 
@@ -64,7 +65,12 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
       </div>
 
       {/* 3D Glassmorphism Login Card */}
-      <div className="w-full max-w-md relative z-10 bg-slate-900/80 backdrop-blur-xl border border-slate-800/90 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-black/80">
+      <motion.div 
+        initial={{ opacity: 0, y: 15, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        className="w-full max-w-md relative z-10 bg-slate-900/80 backdrop-blur-xl border border-slate-800/90 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-black/80"
+      >
         <div className="text-center space-y-3 mb-6">
           <div className="flex justify-center">
             <LogoAvatar size="xl" withGlow={true} />
@@ -140,7 +146,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
             )}
           </button>
         </form>
-      </div>
+      </motion.div>
     </div>
   );
 };

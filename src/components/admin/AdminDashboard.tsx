@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Package, 
   Video, 
@@ -298,8 +299,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         {/* TAB 1: PRODUCT MANAGER (CRUD) */}
-        {activeTab === 'products' && (
-          <div className="space-y-4">
+        <AnimatePresence mode="wait">
+          {activeTab === 'products' && (
+            <motion.div
+              key="tab-products"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="space-y-4"
+            >
             
             {/* Filter & Search Bar Card */}
             <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-slate-800 shadow-lg grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
@@ -526,12 +535,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               )}
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* TAB 2: HOMEPAGE MARKETING VIDEO MANAGER */}
         {activeTab === 'video' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <motion.div
+            key="tab-video"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="grid grid-cols-1 lg:grid-cols-12 gap-6"
+          >
             
             {/* Video Configuration Form */}
             <div className="lg:col-span-6 space-y-4">
@@ -691,12 +707,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-          </div>
+          </motion.div>
         )}
 
         {/* TAB 3: TOP BANNER MANAGER */}
         {activeTab === 'banner' && (
-          <div className="max-w-2xl mx-auto space-y-6">
+          <motion.div
+            key="tab-banner"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="max-w-2xl mx-auto space-y-6"
+          >
             <div className="bg-slate-900/80 backdrop-blur-md p-6 sm:p-8 rounded-3xl border border-slate-800 shadow-xl space-y-6">
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FF0000]/10 border border-[#FF0000]/30 text-[#FF0000] text-xs font-bold uppercase tracking-wider">
@@ -821,12 +844,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               </form>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* TAB 4: STORE OVERVIEW & CONFIGURATION */}
         {activeTab === 'overview' && (
-          <div className="space-y-6">
+          <motion.div
+            key="tab-overview"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="space-y-6"
+          >
             
             {/* 3D Stats Metrics Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -891,8 +921,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
       </main>
 

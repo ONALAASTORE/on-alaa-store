@@ -17,7 +17,9 @@ import {
   Headphones,
   Watch,
   Layers,
-  Loader2
+  Loader2,
+  Mic,
+  AlertCircle
 } from 'lucide-react';
 import { Product, Currency } from '../types';
 import { CATEGORIES } from '../data/categories';
@@ -48,6 +50,16 @@ const POPULAR_SEARCHES = [
   'Apple Watch Ultra 2'
 ];
 
+// Helper to safely retrieve Web Speech API class across browsers
+const getSpeechRecognitionClass = () => {
+  if (typeof window === 'undefined') return null;
+  return (
+    (window as any).SpeechRecognition ||
+    (window as any).webkitSpeechRecognition ||
+    null
+  );
+};
+
 export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   searchQuery,
   onSearchChange,
@@ -75,6 +87,107 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Web Speech API Voice-to-Text State
+  const [isListening, setIsListening] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const isSpeechSupported = useMemo(() => Boolean(getSpeechRecognitionClass()), []);
+
+  // Cleanup speech recognition session on component unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
+  // Auto-dismiss voice status/error notifications after 4.5 seconds
+  useEffect(() => {
+    if (speechError) {
+      const timer = setTimeout(() => {
+        setSpeechError(null);
+      }, 4500);
+      return () => clearTimeout(timer);
+    }
+  }, [speechError]);
+
+  // Web Speech API Microphone Toggle Handler
+  const handleToggleVoice = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const SpeechAPI = getSpeechRecognitionClass();
+    if (!SpeechAPI) {
+      setSpeechError('Web Speech API is not supported in this browser. Please try Google Chrome, MS Edge, or Safari.');
+      return;
+    }
+
+    if (isListening) {
+      try {
+        recognitionRef.current?.stop();
+      } catch (err) {
+        console.warn('Speech recognition stop warning:', err);
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechAPI();
+      recognitionRef.current = recognition;
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.lang = navigator.language || 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setSpeechError(null);
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript.trim()) {
+          onSearchChange(transcript);
+          if (!isOpen) setIsOpen(true);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Web Speech API event error:', event.error);
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setSpeechError('Microphone permission blocked. Please allow mic access in your browser.');
+        } else if (event.error === 'no-speech') {
+          setSpeechError('No speech detected. Please speak closer to your microphone.');
+        } else if (event.error === 'audio-capture') {
+          setSpeechError('No microphone hardware detected on this device.');
+        } else {
+          setSpeechError(`Voice recognition error: ${event.error}`);
+        }
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        inputRef.current?.focus();
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.error('Failed to start Web Speech API:', err);
+      setIsListening(false);
+      setSpeechError('Could not activate microphone voice input.');
+    }
+  };
 
   // Subtle loading transition indicator when typing query
   useEffect(() => {
@@ -319,7 +432,9 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       {/* Search Input Bar (Persistent & Always Visible) */}
       <div 
         className={`relative flex items-center w-full transition-all duration-200 rounded-2xl bg-slate-100/90 hover:bg-slate-100 border ${
-          focusedViaSlash
+          isListening
+            ? 'bg-white border-red-500 ring-4 ring-red-500/20 shadow-lg shadow-red-500/10'
+            : focusedViaSlash
             ? 'bg-white border-blue-500 ring-4 ring-blue-500/30 shadow-lg shadow-blue-500/10 animate-pulse'
             : isOpen
             ? 'bg-white border-blue-500 ring-3 ring-blue-500/15 shadow-md shadow-blue-500/5'
@@ -328,7 +443,13 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       >
         <div className="absolute left-3.5 flex items-center pointer-events-none text-slate-400">
           <Search className={`w-4 h-4 transition-all duration-200 ${
-            focusedViaSlash ? 'text-blue-600 scale-110' : isOpen ? 'text-blue-600' : 'text-slate-400'
+            isListening 
+              ? 'text-red-500 animate-pulse' 
+              : focusedViaSlash 
+              ? 'text-blue-600 scale-110' 
+              : isOpen 
+              ? 'text-blue-600' 
+              : 'text-slate-400'
           }`} />
         </div>
 
@@ -347,14 +468,14 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
             setSelectedIndex(-1);
           }}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          placeholder={isListening ? 'Listening... Speak now 🎙️' : placeholder}
           autoComplete="off"
           spellCheck={false}
-          className="w-full pl-10 pr-24 py-2 sm:py-2.5 text-xs sm:text-sm bg-transparent outline-none text-slate-900 placeholder:text-slate-400 font-medium"
+          className="w-full pl-10 pr-28 sm:pr-32 py-2 sm:py-2.5 text-xs sm:text-sm bg-transparent outline-none text-slate-900 placeholder:text-slate-400 font-medium"
         />
 
-        {/* Right Action Icons: Loading Spinner + Clear Button with fade & rotate + Keyboard Shortcut Badge */}
-        <div className="absolute right-2.5 flex items-center gap-1.5">
+        {/* Right Action Icons: Loading Spinner + Voice Mic Button + Clear Button with fade & rotate + Keyboard Shortcut Badge */}
+        <div className="absolute right-2.5 flex items-center gap-1 sm:gap-1.5">
           {/* Subtle loading spinner during search execution */}
           <AnimatePresence>
             {isSearching && (
@@ -371,6 +492,43 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Web Speech API Microphone Voice Input Button */}
+          <button
+            type="button"
+            id={idPrefix === 'header-desktop' ? 'header-voice-search-btn' : `${idPrefix}-voice-search-btn`}
+            onClick={handleToggleVoice}
+            className={`p-1.5 rounded-full transition-all cursor-pointer flex items-center justify-center relative ${
+              isListening
+                ? 'bg-red-500 text-white shadow-md shadow-red-500/40 ring-2 ring-red-400 animate-pulse'
+                : 'text-slate-400 hover:text-blue-600 hover:bg-slate-200/70'
+            }`}
+            title={
+              isListening
+                ? 'Listening... Click to stop voice search'
+                : isSpeechSupported
+                ? 'Voice search (Web Speech API) - click and speak'
+                : 'Voice search not supported in this browser'
+            }
+            aria-label={isListening ? 'Stop voice search' : 'Search by voice'}
+          >
+            {isListening ? (
+              <motion.div
+                animate={{ scale: [1, 1.25, 1] }}
+                transition={{ repeat: Infinity, duration: 0.8 }}
+                className="flex items-center justify-center"
+              >
+                <Mic className="w-3.5 h-3.5 text-white" />
+              </motion.div>
+            ) : (
+              <Mic className="w-3.5 h-3.5" />
+            )}
+
+            {/* Pulsing listening indicator ping dot */}
+            {isListening && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-600 ring-2 ring-white animate-ping" />
+            )}
+          </button>
 
           {/* Clear Button with subtle fade-in and rotate entrance animation */}
           <AnimatePresence mode="wait">
@@ -412,6 +570,31 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Voice Status / Error Alert Notification */}
+      <AnimatePresence>
+        {speechError && (
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            transition={{ duration: 0.2 }}
+            className="absolute top-full left-0 right-0 mt-2 p-2.5 rounded-xl bg-slate-900/95 text-white text-xs font-semibold flex items-center justify-between gap-2 shadow-2xl border border-red-500/40 z-50 backdrop-blur-md"
+          >
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+              <span className="text-slate-200">{speechError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSpeechError(null)}
+              className="text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Auto-Suggestion Floating Dropdown Popover */}
       {isOpen && (

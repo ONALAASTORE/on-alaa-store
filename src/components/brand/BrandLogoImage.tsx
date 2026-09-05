@@ -31,14 +31,14 @@ export const BrandLogoImage: React.FC<BrandLogoImageProps> = ({
           {/* 'O' with Play Button */}
           <g transform="translate(42, 0)">
             {/* Outer Red Ring */}
-            <circle cx="0" cy="0" r="40" fill="none" stroke="#FF0000" stroke-width="16" />
+            <circle cx="0" cy="0" r="40" fill="none" stroke="#FF0000" strokeWidth="16" />
             {/* Inner Red Play Triangle */}
             <path 
               d="M -9,-17 L 15,0 L -9,17 Z" 
               fill="#FF0000" 
               stroke="#FF0000" 
-              stroke-width="3" 
-              stroke-linejoin="round" 
+              strokeWidth="3" 
+              strokeLinejoin="round" 
             />
           </g>
 
@@ -46,11 +46,11 @@ export const BrandLogoImage: React.FC<BrandLogoImageProps> = ({
           <text 
             x="96" 
             y="26" 
-            font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Arial Rounded MT Bold', sans-serif" 
-            font-weight="900" 
-            font-size="94" 
+            fontFamily="system-ui, -apple-system, 'Segoe UI', Roboto, 'Arial Rounded MT Bold', sans-serif" 
+            fontWeight="900" 
+            fontSize="94" 
             fill="#FF0000" 
-            letter-spacing="1"
+            letterSpacing="1"
           >
             N ALAA
           </text>
@@ -61,12 +61,12 @@ export const BrandLogoImage: React.FC<BrandLogoImageProps> = ({
           <text 
             x="0" 
             y="0" 
-            text-anchor="middle" 
-            font-family="system-ui, -apple-system, 'Segoe UI', Arial, sans-serif" 
-            font-weight="900" 
-            font-size="46" 
+            textAnchor="middle" 
+            fontFamily="system-ui, -apple-system, 'Segoe UI', Arial, sans-serif" 
+            fontWeight="900" 
+            fontSize="46" 
             fill="#000000" 
-            letter-spacing="16"
+            letterSpacing="16"
           >
             STORE
           </text>
