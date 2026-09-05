@@ -155,7 +155,10 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Dedicated Always-Visible Persistent Search Bar (Desktop & Tablet Large) */}
-          <div className="flex-1 max-w-xl lg:max-w-2xl hidden md:block">
+          <div 
+            id="header-search-container" 
+            className="flex-1 max-w-xl lg:max-w-2xl hidden md:block rounded-2xl transition-all focus-within:ring-2 focus-within:ring-blue-500/40 focus-within:animate-pulse"
+          >
             <SearchAutocomplete
               searchQuery={searchQuery}
               onSearchChange={onSearchChange}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
   X, 
@@ -61,6 +62,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [focusedViaSlash, setFocusedViaSlash] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     try {
@@ -135,6 +137,8 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
         e.preventDefault();
         inputRef.current?.focus();
         setIsOpen(true);
+        setFocusedViaSlash(true);
+        setTimeout(() => setFocusedViaSlash(false), 1200);
         return;
       }
 
@@ -315,11 +319,17 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       {/* Search Input Bar (Persistent & Always Visible) */}
       <div 
         className={`relative flex items-center w-full transition-all duration-200 rounded-2xl bg-slate-100/90 hover:bg-slate-100 border ${
-          isOpen ? 'bg-white border-blue-500 ring-3 ring-blue-500/15 shadow-md shadow-blue-500/5' : 'border-slate-200/90'
+          focusedViaSlash
+            ? 'bg-white border-blue-500 ring-4 ring-blue-500/30 shadow-lg shadow-blue-500/10 animate-pulse'
+            : isOpen
+            ? 'bg-white border-blue-500 ring-3 ring-blue-500/15 shadow-md shadow-blue-500/5'
+            : 'border-slate-200/90'
         }`}
       >
         <div className="absolute left-3.5 flex items-center pointer-events-none text-slate-400">
-          <Search className={`w-4 h-4 transition-colors ${isOpen ? 'text-blue-600' : 'text-slate-400'}`} />
+          <Search className={`w-4 h-4 transition-all duration-200 ${
+            focusedViaSlash ? 'text-blue-600 scale-110' : isOpen ? 'text-blue-600' : 'text-slate-400'
+          }`} />
         </div>
 
         <input
@@ -340,31 +350,66 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           placeholder={placeholder}
           autoComplete="off"
           spellCheck={false}
-          className="w-full pl-10 pr-20 py-2 sm:py-2.5 text-xs sm:text-sm bg-transparent outline-none text-slate-900 placeholder:text-slate-400 font-medium"
+          className="w-full pl-10 pr-24 py-2 sm:py-2.5 text-xs sm:text-sm bg-transparent outline-none text-slate-900 placeholder:text-slate-400 font-medium"
         />
 
-        {/* Right Action Icons: Clear Button + Keyboard Shortcut Badge */}
+        {/* Right Action Icons: Loading Spinner + Clear Button with fade & rotate + Keyboard Shortcut Badge */}
         <div className="absolute right-2.5 flex items-center gap-1.5">
-          {searchQuery ? (
-            <button
-              type="button"
-              id={`${idPrefix}-clear-search-btn`}
-              onClick={() => {
-                onSearchChange('');
-                inputRef.current?.focus();
-              }}
-              className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition"
-              title="Clear search"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          ) : (
-            !isMobile && (
-              <span className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-semibold text-slate-400 bg-white/90 border border-slate-200 px-1.5 py-0.5 rounded-md shadow-2xs select-none">
-                <kbd className="font-sans">⌘</kbd>K
-              </span>
-            )
-          )}
+          {/* Subtle loading spinner during search execution */}
+          <AnimatePresence>
+            {isSearching && (
+              <motion.div
+                key="search-loading-spinner"
+                initial={{ opacity: 0, scale: 0.6 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.6 }}
+                transition={{ duration: 0.15 }}
+                className="flex items-center text-blue-600"
+                title="Searching..."
+              >
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Clear Button with subtle fade-in and rotate entrance animation */}
+          <AnimatePresence mode="wait">
+            {searchQuery ? (
+              <motion.button
+                key="clear-btn"
+                type="button"
+                id={`${idPrefix}-clear-search-btn`}
+                initial={{ opacity: 0, rotate: -90, scale: 0.7 }}
+                animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                exit={{ opacity: 0, rotate: 90, scale: 0.7 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                onClick={() => {
+                  onSearchChange('');
+                  inputRef.current?.focus();
+                }}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition cursor-pointer"
+                title="Clear search"
+                aria-label="Clear search query"
+              >
+                <X className="w-3.5 h-3.5" />
+              </motion.button>
+            ) : (
+              !isMobile && (
+                <motion.span
+                  key="shortcut-badge"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 bg-white/90 border border-slate-200 px-1.5 py-0.5 rounded-md shadow-2xs select-none"
+                >
+                  <kbd className="font-mono bg-slate-100 px-1 py-0.2 rounded border border-slate-200 text-slate-500 font-bold">/</kbd>
+                  <span className="text-slate-300">or</span>
+                  <kbd className="font-sans">⌘K</kbd>
+                </motion.span>
+              )
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
